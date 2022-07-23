@@ -74,8 +74,8 @@ input::placeholder {
 .modal button {
   border: 1px solid var(--main-button-border-color);
   background-color: var(--main-button-background-color);
-  padding: 0px 10px;
-  margin: 0px 5px;
+  padding: 0 10px;
+  margin: 0 5px;
 }
 
 .modal .body-wrapper {
