@@ -1,4 +1,4 @@
-import {changeReadyStatus} from "../views/user.mjs";
+import { changeReadyStatus } from "../views/user.mjs";
 
 
 const setReady = (users, username, ready) => {

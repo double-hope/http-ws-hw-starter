@@ -6,17 +6,13 @@ class Users{
     getUsers(){
         return this.users;
     }
+
     setUsers(users){
         this.users = users;
     }
+
     updateUsers(user){
         this.users.push(user);
-    }
-    getUserByUsername(username){
-        for (const user of this.users) {
-            if(user.username === username)
-                return user;
-        }
     }
 
     setUser(user){

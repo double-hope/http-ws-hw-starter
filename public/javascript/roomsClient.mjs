@@ -1,8 +1,13 @@
 import {appendRoomElement} from "./views/room.mjs";
-import {Rooms} from "./classes/classes.mjs";
-import {joinRoom} from "./game.mjs";
+import {joinRoom, _rooms, _users} from "./game.mjs";
 
-const _rooms = new Rooms([])
+const updateRooms = rooms => {
+    _rooms.setRooms(rooms);
+    _rooms.getRooms().map(room => appendRoomElement(
+        {name: room.name,
+            numberOfUsers: room.numberOfUsers,
+            onJoin: joinRoom}));
+}
 
 const updateCreated = room => {
     _rooms.updateRooms(room);
@@ -12,4 +17,4 @@ const updateCreated = room => {
             onJoin: joinRoom});
 }
 
-export { updateCreated };
+export { updateRooms, updateCreated };

@@ -1,5 +1,7 @@
 import { Server } from 'socket.io';
 import * as config from './config';
+import {texts} from "../data";
+import {MAXIMUM_USERS_FOR_ONE_ROOM} from "./config";
 
 let rooms: {name: string, numberOfUsers: number}[] = [];
 
@@ -11,15 +13,24 @@ type user = {
 
 let users: user[][] = [];
 
+type progress = {
+	username: string,
+	progress: number,
+}
+
+let progresses: progress[][] = [];
+
 export default (io: Server) => {
 	io.on('connection', socket => {
+
 		const username = socket.handshake.query.username;
 
-		socket.emit('UPDATE_ROOMS', rooms);
+		socket.emit('UPDATE_ROOMS', rooms.filter(room => room.numberOfUsers < MAXIMUM_USERS_FOR_ONE_ROOM));
 
 		socket.on('CREATE_ROOM', (room) => {
 			rooms = rooms.concat(room);
 			users.push([]);
+			progresses.push([]);
 			socket.emit('UPDATE_CREATED_ROOMS', room);
 			socket.broadcast.emit('UPDATE_CREATED_ROOMS', room);
 		});
@@ -29,6 +40,7 @@ export default (io: Server) => {
 				if(rooms[i].name == name){
 					socket.emit('UPDATE_USERS', name, users[i]);
 					users[i].push(user);
+					progresses[i].push({username: user.username, progress: 0});
 					socket.emit('FINISH_JOINING', name, user);
 					socket.broadcast.emit('FINISH_JOINING', name, user);
 					break;
@@ -67,10 +79,31 @@ export default (io: Server) => {
 				}
 		});
 
-		socket.on('CHANGE_TIMER', (timer: number)=>{
-			socket.emit('SET_TIMER', timer);
-			socket.broadcast.emit('SET_TIMER', timer);
+		socket.on('CHANGE_TIMER', (timer: number, timerName: String)=>{
+			timer--;
+			socket.emit('SET_TIMER', timer, timerName);
+		});
+		
+		socket.on('CHOOSE_TEXT', ()=>{
+			const random = Math.floor(Math.random() * texts.length);
+			socket.emit('SET_TEXT', texts[random]);
+			socket.broadcast.emit('SET_TEXT', texts[random]);
 		});
 
+		socket.on('CHANGE_PROGRESS', (username: string, progress: number) => {
+			for (let i = 0; i < progresses.length; i++) {
+				for(const userProgress of progresses[i]){
+					if(userProgress.username === username) {
+						userProgress.progress = progress;
+						socket.emit('CONFIRM_CHANGE_PROGRESS', username, progress, progresses[i]);
+						socket.broadcast.emit('CONFIRM_CHANGE_PROGRESS', username, progress, progresses[i]);
+					}
+				}
+			}
+		});
+		socket.on('REMOVE_USER_ELEMENT', (username: string) => {
+			socket.emit('FINISH_REMOVING_USER', username);
+			socket.broadcast.emit('FINISH_REMOVING_USER', username);
+		});
 	});
 };

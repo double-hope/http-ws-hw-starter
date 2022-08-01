@@ -1,30 +1,37 @@
-import { showInputModal } from './views/modal.mjs';
-import {appendRoomElement, updateNumberOfUsersInRoom} from './views/room.mjs';
-import { checkExists } from './helpers/checkHelper.mjs';
-import {appendUserElement, changeReadyStatus} from "./views/user.mjs";
-import {setReady, toggleReady} from "./helpers/usersHelper.mjs";
-import { Rooms, Users } from './classes/classes.mjs';
-import {addRemoveClass} from "./helpers/addRemoveClassHelper.mjs";
-import {addClass, removeClass} from "./helpers/domHelper.mjs";
+import {showInputModal, showResultsModal} from './views/modal.mjs';
+import { checkExists, addRemoveClass, removeClass, setReady, toggleReady } from './helpers/helpers.mjs';
+import {changeReadyStatus, removeUserElement, setProgress} from './views/user.mjs';
+import { Rooms, Users, Progress } from './classes/classes.mjs';
+import { updateRooms, updateCreated } from './roomsClient.mjs';
+import { finishJoining, updateUsers } from './usersClient.mjs';
+import {
+	CREATE_ROOM,
+	ROOM_NAME,
+	GAME_PAGE,
+	ROOMS_PAGE,
+	BACK_TO_ROOMS,
+	READY,
+	TIMER,
+	GAME_TIMER,
+	TEXT
+} from './constants.mjs';
 
+export let _rooms = new Rooms([]);
+export let _users = new Users([]);
+export let _progress = new Progress([]);
 
-let _rooms = new Rooms([]);
-let _users = new Users([]);
 let _timer = 5;
 let usersStatus = [];
+let thisText = '';
+let rightLetters = 0;
 
-const username = sessionStorage.getItem('username');
-const CREATE_ROOM = document.getElementById('add-room-btn');
-const ROOMS_PAGE = document.getElementById('rooms-page');
-const GAME_PAGE = document.getElementById('game-page');
-const ROOM_NAME = document.getElementById('room-name');
-const BACK_TO_ROOMS = document.getElementById('quit-room-btn');
-let READY = document.getElementById('ready-btn');
+export const username = sessionStorage.getItem('username');
+let isGame = false;
 
 let _name = '';
 let currentRoomName = '';
 
-const socket = io('', { query: { username } });
+export const socket = io('', { query: { username } });
 
 if (!username) {
 	window.location.replace('/login');
@@ -39,6 +46,7 @@ const roomName = (name) =>{
 }
 
 const submit = () =>{
+
 	if(!_name){
 		alert('Enter room name');
 		return;
@@ -56,23 +64,7 @@ const submit = () =>{
 	joinRoom(room.name)
 }
 
-const updateRooms = rooms => {
-	_rooms.setRooms(rooms);
-	_rooms.getRooms().map(room => appendRoomElement(
-		{name: room.name,
-			numberOfUsers: room.numberOfUsers,
-			onJoin: joinRoom}));
-}
-
-const updateCreated = room => {
-	_rooms.updateRooms(room);
-	appendRoomElement(
-		{name: room.name,
-			numberOfUsers: room.numberOfUsers,
-			onJoin: joinRoom});
-}
-
-const joinRoom = (name = '') => {
+export const joinRoom = (name = '') => {
 
 	addRemoveClass(document.getElementById('timer'), READY, 'display-none'); // DELETE LATER
 
@@ -91,6 +83,7 @@ const joinRoom = (name = '') => {
 	addRemoveClass(ROOMS_PAGE, GAME_PAGE, 'display-none');
 
 	BACK_TO_ROOMS.addEventListener('click', ()=>{
+		socket.emit('REMOVE_USER_ELEMENT', username);
 		addRemoveClass(GAME_PAGE, ROOMS_PAGE, 'display-none');
 		_users.getUsers().map(user => {
 			if(user.username === username){
@@ -104,28 +97,10 @@ const joinRoom = (name = '') => {
 }
 
 
-const finishJoining = (name, user) => {
-	READY = document.getElementById('ready-btn');
-	_users.updateUsers(user);
-	_rooms.getRoomByName(name)
-	updateNumberOfUsersInRoom({name: name, numberOfUsers: _rooms.getRoomByName(name).numberOfUsers});
-	(user.username === username)
-		? appendUserElement({username: user.username, ready: user.ready, isCurrentUser: true})
-		: appendUserElement({username: user.username, ready: user.ready, isCurrentUser: false})
-}
-
-const updateUsers = (name, users) => {
-	const usersWrapper = document.getElementById('users-wrapper');
-	usersWrapper.innerHTML = '';
-	_users.setUsers(users);
-	_users.getUsers().map(user => appendUserElement({username: user.username, ready: user.ready, isCurrentUser: false}));
-}
-
 READY.addEventListener('click', ()=>{
 
 	for (const user of _users.getUsers()) {
 		if(user.username === username){
-
 			toggleReady(_users.getUsers(), username, user.ready);
 			_users.setUserProperty(user, 'ready', user.ready);
 			(user.ready)
@@ -149,27 +124,82 @@ const setUsersStatus = (status) => {
 	usersStatus = status;
 	for (const user of usersStatus){
 		if(!user.ready){
-			addRemoveClass(document.getElementById('timer'), READY, 'display-none');
+			addRemoveClass(TIMER, READY, 'display-none');
 			return;
 		}
 	}
-	addRemoveClass(READY, document.getElementById('timer'), 'display-none');
+	addRemoveClass(READY, TIMER, 'display-none');
+	startGame({prepareTime: 5, gameTime: 40});
+	socket.emit('CHOOSE_TEXT');
+}
 
-	_timer = 5;
+const startGame = ({prepareTime, gameTime}) => {
 
-	let timerId = setInterval(() => {
-		_timer--;
-		socket.emit('CHANGE_TIMER', _timer)
+	_timer = prepareTime;
+
+	new Promise((resolve, reject)=> {
+		setTimeout(() => {
+			clearInterval(timerTimer);
+			const textContainer = document.getElementById('text-container');
+			addRemoveClass(TIMER, textContainer, 'display-none');
+			removeClass(GAME_TIMER, 'display-none');
+			resolve();
+		}, prepareTime * 1000);
+	}).then(()=>{
+		_timer = gameTime + 1;
+		return new Promise((resolve, reject) => {
+			setTimeout(() => {
+				clearInterval(timerGame);
+				resolve();
+			}, gameTime * 1000);
+		}).then(() => {
+			const progress = [];
+			_progress.filterProgress().map(p => progress.push(p.username));
+			showResultsModal({usersSortedArray: progress});
+		})
+	})
+
+	let timerTimer = setInterval(() => {
+		socket.emit('CHANGE_TIMER', _timer, 'timer')
 	}, 1000);
 
-	setTimeout(() => { clearInterval(timerId); }, 5000);
+	let timerGame = setInterval(() => {
+		socket.emit('CHANGE_TIMER', _timer, 'game-timer-seconds')
+	}, 1000);
 
 }
 
-const setTimer = (time) =>{
+const setTimer = (time, timerName) =>{
 	_timer = time;
-	const timer = document.getElementById('timer');
+	const timer = document.getElementById(timerName);
 	timer.innerText = time;
+}
+
+const setText = (text) => {
+	TEXT.innerText = text;
+	isGame = true;
+	thisText = text;
+}
+
+document.addEventListener('keydown', (event) => {
+	if(isGame){
+		let textArray = thisText.split('');
+		if(textArray[rightLetters] === event.key){
+			rightLetters++;
+			const progress = (rightLetters * 100) / thisText.length;
+			TEXT.innerHTML ='<span class="highlighting">' + thisText.substring(0, rightLetters) + '</span>' + thisText.substring(rightLetters, thisText.length);
+			socket.emit('CHANGE_PROGRESS', username, progress);
+		}
+	}
+});
+
+const setUserProgress = (user, progress, progresses) => {
+	_progress.setProgress(progresses);
+	setProgress({username: user, progress: progress});
+};
+
+const removeUser = (username) => {
+	removeUserElement(username);
 }
 
 
@@ -180,3 +210,6 @@ socket.on('UPDATE_USERS', updateUsers);
 socket.on('UPDATE_ROOMS', updateRooms);
 socket.on('UPDATE_CREATED_ROOMS', updateCreated);
 socket.on('FINISH_JOINING', finishJoining);
+socket.on('SET_TEXT', setText);
+socket.on('CONFIRM_CHANGE_PROGRESS', setUserProgress);
+socket.on('FINISH_REMOVING_USER', removeUser);
