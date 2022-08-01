@@ -102,7 +102,7 @@ export default (io: Server) => {
 					}
 				}
 			}
-		});
+		})
 		socket.on('REMOVE_USER_ELEMENT', (roomName: string, username: string) => {
 			let _room;
 			for(const room of rooms){

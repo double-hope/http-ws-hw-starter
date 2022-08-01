@@ -197,6 +197,19 @@ document.addEventListener('keydown', (event) => {
 const setUserProgress = (user, progress, progresses) => {
 	_progress.setProgress(progresses);
 	setProgress({username: user, progress: progress});
+	let done = true;
+	for (const p of _progress.getProgress()) {
+		console.log(p)
+		if(p.progress < 100) {
+			done = false;
+			break;
+		}
+	}
+	if(done){
+		const progress = [];
+		_progress.filterProgress().map(p => progress.push(p.username));
+		showResultsModal({usersSortedArray: progress});
+	}
 };
 
 const removeUser = (username, room) => {
