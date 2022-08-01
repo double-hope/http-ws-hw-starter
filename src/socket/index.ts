@@ -1,7 +1,6 @@
 import { Server } from 'socket.io';
-import * as config from './config';
 import {texts} from "../data";
-import {MAXIMUM_USERS_FOR_ONE_ROOM} from "./config";
+import {MAXIMUM_USERS_FOR_ONE_ROOM, SECONDS_FOR_GAME, SECONDS_TIMER_BEFORE_START_GAME} from "./config";
 
 let rooms: {name: string, numberOfUsers: number}[] = [];
 
@@ -23,9 +22,11 @@ let progresses: progress[][] = [];
 export default (io: Server) => {
 	io.on('connection', socket => {
 
-		const username = socket.handshake.query.username;
+		rooms = rooms.filter(room => (room.numberOfUsers < MAXIMUM_USERS_FOR_ONE_ROOM && room.numberOfUsers > 0));
 
-		socket.emit('UPDATE_ROOMS', rooms.filter(room => room.numberOfUsers < MAXIMUM_USERS_FOR_ONE_ROOM));
+		socket.emit('SETUP', SECONDS_FOR_GAME, SECONDS_TIMER_BEFORE_START_GAME);
+
+		socket.emit('UPDATE_ROOMS', rooms);
 
 		socket.on('CREATE_ROOM', (room) => {
 			rooms = rooms.concat(room);
@@ -38,11 +39,12 @@ export default (io: Server) => {
 		socket.on('JOIN_ROOM', (name: string, user) => {
 			for(let i = 0; i < rooms.length; i++){
 				if(rooms[i].name == name){
+					rooms[i].numberOfUsers += 1;
 					socket.emit('UPDATE_USERS', name, users[i]);
 					users[i].push(user);
 					progresses[i].push({username: user.username, progress: 0});
-					socket.emit('FINISH_JOINING', name, user);
-					socket.broadcast.emit('FINISH_JOINING', name, user);
+					socket.emit('FINISH_JOINING', name, user, rooms);
+					socket.broadcast.emit('FINISH_JOINING', name, user, rooms);
 					break;
 				}
 			}
@@ -101,9 +103,23 @@ export default (io: Server) => {
 				}
 			}
 		});
-		socket.on('REMOVE_USER_ELEMENT', (username: string) => {
-			socket.emit('FINISH_REMOVING_USER', username);
-			socket.broadcast.emit('FINISH_REMOVING_USER', username);
+		socket.on('REMOVE_USER_ELEMENT', (roomName: string, username: string) => {
+			let _room;
+			for(const room of rooms){
+				if(room.name === roomName){
+					room.numberOfUsers -= 1;
+					_room = room;
+					if(room.numberOfUsers === 0){
+						rooms.filter(r => r.name != room.name);
+						socket.emit('FINISH_REMOVING_ROOM', room);
+						socket.broadcast.emit('FINISH_REMOVING_ROOM', room);
+						break;
+					}
+				}
+			}
+			socket.emit('FINISH_REMOVING_USER', username, _room);
+			socket.broadcast.emit('FINISH_REMOVING_USER', username, _room);
 		});
+
 	});
 };

@@ -26,7 +26,6 @@ const showInputModal = ({ title, onChange = () => {}, onSubmit = () => {} }) => 
 };
 
 const showResultsModal = ({ usersSortedArray, onClose = () => {} }) => {
-	console.log(usersSortedArray)
 	const rootElement = document.querySelector('#root');
 
 	const modalElement = createModalElement('Results: ');

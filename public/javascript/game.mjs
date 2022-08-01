@@ -1,9 +1,10 @@
 import {showInputModal, showResultsModal} from './views/modal.mjs';
-import { checkExists, addRemoveClass, removeClass, setReady, toggleReady } from './helpers/helpers.mjs';
-import {changeReadyStatus, removeUserElement, setProgress} from './views/user.mjs';
+import {checkExists, addRemoveClass, removeClass, toggleReady, addClass} from './helpers/helpers.mjs';
+import { removeUserElement, setProgress} from './views/user.mjs';
 import { Rooms, Users, Progress } from './classes/classes.mjs';
 import { updateRooms, updateCreated } from './roomsClient.mjs';
-import { finishJoining, updateUsers } from './usersClient.mjs';
+import { finishJoining, updateUsers, setUsersStatus, updateStatus } from './usersClient.mjs';
+
 import {
 	CREATE_ROOM,
 	ROOM_NAME,
@@ -13,28 +14,35 @@ import {
 	READY,
 	TIMER,
 	GAME_TIMER,
-	TEXT
+	TEXT,
 } from './constants.mjs';
+import {removeRoomElement, updateNumberOfUsersInRoom} from "./views/room.mjs";
 
-export let _rooms = new Rooms([]);
-export let _users = new Users([]);
-export let _progress = new Progress([]);
+export const _rooms = new Rooms([]);
+export const _users = new Users([]);
+export const _progress = new Progress([]);
+export let SECONDS_TIMER_BEFORE_START_GAME;
+export let SECONDS_FOR_GAME;
+export let usersStatus = [];
 
-let _timer = 5;
-let usersStatus = [];
+let _timer = SECONDS_TIMER_BEFORE_START_GAME;
 let thisText = '';
 let rightLetters = 0;
-
-export const username = sessionStorage.getItem('username');
 let isGame = false;
-
 let _name = '';
 let currentRoomName = '';
+
+export const username = sessionStorage.getItem('username');
 
 export const socket = io('', { query: { username } });
 
 if (!username) {
 	window.location.replace('/login');
+}
+
+const setup = (gameTime, beforeGameTime) => {
+	SECONDS_FOR_GAME = gameTime;
+	SECONDS_TIMER_BEFORE_START_GAME = beforeGameTime;
 }
 
 CREATE_ROOM.addEventListener('click', ()=>{
@@ -43,6 +51,10 @@ CREATE_ROOM.addEventListener('click', ()=>{
 
 const roomName = (name) =>{
 	_name = name;
+}
+
+export const setUsersStatusInArray = (status) => {
+	usersStatus = status;
 }
 
 const submit = () =>{
@@ -66,7 +78,10 @@ const submit = () =>{
 
 export const joinRoom = (name = '') => {
 
-	addRemoveClass(document.getElementById('timer'), READY, 'display-none'); // DELETE LATER
+	addRemoveClass(TIMER, READY, 'display-none'); // DELETE LATER
+	addClass(TIMER, 'display-none');
+	addClass(GAME_TIMER, 'display-none');
+	addClass(TEXT, 'display-none');
 
 	const user ={
 		username: username,
@@ -76,23 +91,28 @@ export const joinRoom = (name = '') => {
 	if(event.currentTarget.hasAttribute('data-room-name'))
 		name = event.currentTarget.getAttribute('data-room-name');
 
-	ROOM_NAME.innerText = name;
 	currentRoomName = name;
-	socket.emit('JOIN_ROOM', name, user);
+	ROOM_NAME.innerText = name;
+	socket.emit('JOIN_ROOM', currentRoomName, user);
 
 	addRemoveClass(ROOMS_PAGE, GAME_PAGE, 'display-none');
 
 	BACK_TO_ROOMS.addEventListener('click', ()=>{
-		socket.emit('REMOVE_USER_ELEMENT', username);
+
+		socket.emit('REMOVE_USER_ELEMENT', currentRoomName, username);
+
+		READY.innerText = 'READY';
 		addRemoveClass(GAME_PAGE, ROOMS_PAGE, 'display-none');
+
 		_users.getUsers().map(user => {
 			if(user.username === username){
-				setReady(_users.getUsers(), username, false);
 				_users.setUserProperty(user, 'ready', user.ready);
 			}
-		})
-		const filteredUsers = _users.getUsers().filter(user => user.username !== username);
-		socket.emit('SET_USERS', name, filteredUsers);
+		});
+
+		_users.setUsers(_users.getUsers().filter(user => user.username !== username));
+
+		socket.emit('SET_USERS', name, _users.getUsers());
 	});
 }
 
@@ -114,26 +134,7 @@ READY.addEventListener('click', ()=>{
 
 });
 
-const updateStatus = (usersInRoom) => {
-	for (const user of usersInRoom) {
-		changeReadyStatus({username: user.username, ready: user.ready});
-	}
-}
-
-const setUsersStatus = (status) => {
-	usersStatus = status;
-	for (const user of usersStatus){
-		if(!user.ready){
-			addRemoveClass(TIMER, READY, 'display-none');
-			return;
-		}
-	}
-	addRemoveClass(READY, TIMER, 'display-none');
-	startGame({prepareTime: 5, gameTime: 40});
-	socket.emit('CHOOSE_TEXT');
-}
-
-const startGame = ({prepareTime, gameTime}) => {
+export const startGame = ({prepareTime, gameTime}) => {
 
 	_timer = prepareTime;
 
@@ -144,14 +145,14 @@ const startGame = ({prepareTime, gameTime}) => {
 			addRemoveClass(TIMER, textContainer, 'display-none');
 			removeClass(GAME_TIMER, 'display-none');
 			resolve();
-		}, prepareTime * 1000);
+		}, SECONDS_TIMER_BEFORE_START_GAME * 1000);
 	}).then(()=>{
 		_timer = gameTime + 1;
 		return new Promise((resolve, reject) => {
 			setTimeout(() => {
 				clearInterval(timerGame);
 				resolve();
-			}, gameTime * 1000);
+			}, SECONDS_FOR_GAME * 1000);
 		}).then(() => {
 			const progress = [];
 			_progress.filterProgress().map(p => progress.push(p.username));
@@ -198,11 +199,16 @@ const setUserProgress = (user, progress, progresses) => {
 	setProgress({username: user, progress: progress});
 };
 
-const removeUser = (username) => {
+const removeUser = (username, room) => {
 	removeUserElement(username);
+	updateNumberOfUsersInRoom({name: room.name, numberOfUsers: room.numberOfUsers});
 }
 
+const removeRoom = (room) => {
+	removeRoomElement(room.name);
+}
 
+socket.on('SETUP', setup);
 socket.on('SET_TIMER', setTimer);
 socket.on('SEND_USERS_STATUS', setUsersStatus);
 socket.on('SHOW_USER_STATUS', updateStatus);
@@ -213,3 +219,4 @@ socket.on('FINISH_JOINING', finishJoining);
 socket.on('SET_TEXT', setText);
 socket.on('CONFIRM_CHANGE_PROGRESS', setUserProgress);
 socket.on('FINISH_REMOVING_USER', removeUser);
+socket.on('FINISH_REMOVING_ROOM', removeRoom);
